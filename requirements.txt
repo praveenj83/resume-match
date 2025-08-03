@@ -15,3 +15,6 @@ reportlab
 
 # Required for some LangChain components
 typing-extensions
+
+# GPT-4o integration for job profile assessment
+openai
