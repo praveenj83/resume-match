@@ -5,8 +5,42 @@ Example usage of the Resume PDF Parser
 
 import sys
 import json
+import argparse
+import os
 from pathlib import Path
 from resume_parser import ResumeParser
+
+
+def find_pdf_files(path: str) -> list:
+    """Find all PDF files in a given path (file or directory)."""
+    path_obj = Path(path)
+    
+    if path_obj.is_file():
+        if path_obj.suffix.lower() == '.pdf':
+            return [str(path_obj)]
+        else:
+            print(f"❌ File {path} is not a PDF file")
+            return []
+    
+    elif path_obj.is_dir():
+        pdf_files = []
+        for file_path in path_obj.glob('*.pdf'):
+            pdf_files.append(str(file_path))
+        
+        # Also check for uppercase PDF extension
+        for file_path in path_obj.glob('*.PDF'):
+            pdf_files.append(str(file_path))
+        
+        if not pdf_files:
+            print(f"❌ No PDF files found in directory: {path}")
+        else:
+            print(f"📁 Found {len(pdf_files)} PDF file(s) in directory: {path}")
+        
+        return sorted(pdf_files)
+    
+    else:
+        print(f"❌ Path does not exist: {path}")
+        return []
 
 
 def parse_single_resume(pdf_path: str):
@@ -54,6 +88,7 @@ def parse_single_resume(pdf_path: str):
         print(f"❌ Parsing failed: {result.get('error', 'Unknown error')}")
     
     print("\n" + "=" * 50)
+    return result
 
 
 def parse_multiple_resumes(pdf_paths: list):
@@ -126,52 +161,80 @@ def export_to_json(parsing_result: dict, output_path: str):
         return False
 
 
+def parse_args():
+    """Parse command line arguments."""
+    parser = argparse.ArgumentParser(
+        description='Parse resume PDFs and extract structured information',
+        epilog='''Examples:
+  %(prog)s --file resume.pdf
+  %(prog)s --file /path/to/resume.pdf
+  %(prog)s --file /path/to/resumes/folder/
+  %(prog)s --file ./resumes/ --json
+        ''',
+        formatter_class=argparse.RawDescriptionHelpFormatter
+    )
+    
+    parser.add_argument(
+        '--file', '-f',
+        type=str,
+        required=True,
+        help='Path to a single PDF file or directory containing PDF files'
+    )
+    
+    parser.add_argument(
+        '--json', '-j',
+        action='store_true',
+        help='Automatically export results to JSON format without prompting'
+    )
+    
+    parser.add_argument(
+        '--output-dir', '-o',
+        type=str,
+        default='.',
+        help='Output directory for generated files (default: current directory)'
+    )
+    
+    return parser.parse_args()
+
+
 def main():
     """Main function for example usage."""
-    if len(sys.argv) < 2:
-        print("Usage: python example_usage.py <pdf_file1> [pdf_file2] ...")
-        print("\nExample:")
-        print("  python example_usage.py resume1.pdf")
-        print("  python example_usage.py resume1.pdf resume2.pdf resume3.pdf")
-        return
+    args = parse_args()
     
-    pdf_files = sys.argv[1:]
+    # Find PDF files
+    pdf_files = find_pdf_files(args.file)
     
-    # Validate files exist
-    valid_files = []
-    for pdf_file in pdf_files:
-        if Path(pdf_file).exists():
-            valid_files.append(pdf_file)
-        else:
-            print(f"❌ File not found: {pdf_file}")
-    
-    if not valid_files:
+    if not pdf_files:
         print("❌ No valid PDF files found.")
-        return
+        return 1
     
-    if len(valid_files) == 1:
+    # Create output directory if it doesn't exist
+    output_dir = Path(args.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    
+    if len(pdf_files) == 1:
         # Parse single resume
-        result = parse_single_resume(valid_files[0])
+        print(f"📋 Processing single resume: {Path(pdf_files[0]).name}")
+        result = parse_single_resume(pdf_files[0])
         
-        # Offer to export to JSON
-        response = input("\nExport to JSON? (y/n): ").lower().strip()
-        if response == 'y':
-            parser = ResumeParser()
-            result = parser.parse_resume(valid_files[0])
-            json_file = f"{Path(valid_files[0]).stem}_parsed.json"
-            export_to_json(result, json_file)
+        # Handle JSON export
+        if args.json or (not args.json and input("\nExport to JSON? (y/n): ").lower().strip() == 'y'):
+            json_file = output_dir / f"{Path(pdf_files[0]).stem}_parsed.json"
+            export_to_json(result, str(json_file))
     
     else:
         # Parse multiple resumes
-        results = parse_multiple_resumes(valid_files)
+        print(f"📋 Processing {len(pdf_files)} resumes from: {args.file}")
+        results = parse_multiple_resumes(pdf_files)
         
-        # Offer to export all to JSON
-        response = input("\nExport all results to JSON? (y/n): ").lower().strip()
-        if response == 'y':
-            for i, (pdf_path, result) in enumerate(zip(valid_files, results)):
-                json_file = f"{Path(pdf_path).stem}_parsed.json"
-                export_to_json(result, json_file)
+        # Handle JSON export
+        if args.json or (not args.json and input("\nExport all results to JSON? (y/n): ").lower().strip() == 'y'):
+            for pdf_path, result in zip(pdf_files, results):
+                json_file = output_dir / f"{Path(pdf_path).stem}_parsed.json"
+                export_to_json(result, str(json_file))
+    
+    return 0
 
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
