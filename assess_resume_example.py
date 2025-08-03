@@ -4,7 +4,7 @@ Resume-Job Profile Assessment Example
 =====================================
 
 This script demonstrates how to use the ResumeJobMatcher to assess how well 
-a resume matches a job profile description using GPT-4o.
+a resume matches a job profile description using an LLM.
 
 Usage Examples:
 --------------
@@ -186,7 +186,7 @@ def assess_single_resume(resume_path: str, job_profile_path: str, output_dir: st
         result = matcher.assess_resume_job_fit(resume_path, job_profile_path)
         
         if result['success']:
-            assessment = result['gpt4o_assessment']
+            assessment = result['llm_assessment']
             
             print("✅ Assessment completed successfully!")
             print(f"📊 Overall Match Score: {assessment.get('overall_score', 'N/A')}/10")
@@ -219,7 +219,7 @@ def assess_single_resume(resume_path: str, job_profile_path: str, output_dir: st
                     'success': result['success'],
                     'resume_path': result['resume_path'],
                     'job_profile_path': result['job_profile_path'],
-                    'gpt4o_assessment': result['gpt4o_assessment'],
+                    'llm_assessment': result['llm_assessment'],
                     'resume_metadata': result['resume_parsing_result']['metadata'] if result['resume_parsing_result'] else None
                 }
                 json.dump(json_result, f, indent=2, ensure_ascii=False)
@@ -268,13 +268,13 @@ def batch_assess_resumes(job_profile_path: str, resume_dir: str, output_dir: str
         
         if successful:
             # Show top candidates
-            scored_results = [r for r in successful if r.get('gpt4o_assessment', {}).get('overall_score') is not None]
+            scored_results = [r for r in successful if r.get('llm_assessment', {}).get('overall_score') is not None]
             if scored_results:
-                scored_results.sort(key=lambda x: x['gpt4o_assessment']['overall_score'], reverse=True)
+                scored_results.sort(key=lambda x: x['llm_assessment']['overall_score'], reverse=True)
                 
                 print(f"\n🏆 Top Candidates:")
                 for i, result in enumerate(scored_results[:5], 1):
-                    score = result['gpt4o_assessment']['overall_score']
+                    score = result['llm_assessment']['overall_score']
                     name = Path(result['resume_path']).name
                     print(f"   {i}. {name:<30} Score: {score}/10")
         
@@ -314,8 +314,8 @@ def validate_files(resume_path: str = None, job_profile_path: str = None, resume
             errors.append(f"No PDF files found in directory: {resume_dir}")
     
     # Check for OpenAI API key
-    if not os.getenv('OPENAI_API_KEY'):
-        errors.append("OPENAI_API_KEY environment variable not set")
+    if not os.getenv('OPENAI_API_KEY') and not os.getenv('TOGETHER_API_KEY'):
+        errors.append("OPENAI_API_KEY or TOGETHER_API_KEY environment variable must be set")
     
     return errors
 
@@ -323,7 +323,7 @@ def validate_files(resume_path: str = None, job_profile_path: str = None, resume
 def main():
     """Main function for the assessment example."""
     parser = argparse.ArgumentParser(
-        description='Assess how well resumes match job profile descriptions using GPT-4o',
+        description='Assess how well resumes match job profile descriptions using an LLM',
         epilog='''Examples:
   %(prog)s --resume resume.pdf --job-profile job_description.txt
   %(prog)s --job-profile job_description.txt --resume-dir ./resumes/

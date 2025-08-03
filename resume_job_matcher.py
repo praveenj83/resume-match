@@ -1,6 +1,7 @@
 import os
 import logging
 import json
+import requests
 from typing import Dict, List, Optional, Any, Tuple
 from pathlib import Path
 
@@ -13,7 +14,7 @@ logger = logging.getLogger(__name__)
 
 class ResumeJobMatcher:
     """
-    A tool to assess how well a resume matches a job profile description using GPT-4o.
+    A tool to assess how well a resume matches a job profile description using a LLM.
     """
     
     def __init__(self, api_key: Optional[str] = None):
@@ -21,19 +22,25 @@ class ResumeJobMatcher:
         Initialize the resume job matcher.
         
         Args:
-            api_key (Optional[str]): OpenAI API key. If not provided, will try to get from environment.
+            api_key (Optional[str]): OpenAI or Together.ai API key. If not provided, will try to get from environment.
         """
-        self.api_key = api_key or os.getenv('OPENAI_API_KEY')
+        self.api_key = (
+            api_key
+            or os.getenv('OPENAI_API_KEY')
+            or os.getenv('TOGETHER_API_KEY')
+        )
+
         if not self.api_key:
-            raise ValueError("OpenAI API key is required. Set OPENAI_API_KEY environment variable or pass api_key parameter.")
-        
-        # Initialize OpenAI client
-        self.client = openai.OpenAI(api_key=self.api_key)
-        
-        # Initialize resume parser
+            raise ValueError("API key is required. Set OPENAI_API_KEY or TOGETHER_API_KEY environment variable or pass api_key parameter.")
+
+        if os.getenv('OPENA_API_KEY'):
+            self.client = openai.OpenAI(api_key=self.api_key)
+        else:
+            self.client = None  # Together uses raw HTTP requests
+
         self.resume_parser = ResumeParser()
-        
-        logger.info("ResumeJobMatcher initialized successfully")
+
+        logger.info(f"ResumeJobMatcher initialized successfully.")
     
     def read_job_profile(self, file_path: str) -> str:
         """
@@ -70,14 +77,14 @@ class ResumeJobMatcher:
     
     def create_assessment_prompt(self, job_profile: str, resume_text: str) -> str:
         """
-        Create a prompt for GPT-4o to assess resume-job fit.
+        Create a prompt for an LLM to assess resume-job fit.
         
         Args:
             job_profile (str): Job profile description
             resume_text (str): Resume content
             
         Returns:
-            str: Formatted prompt for GPT-4o
+            str: Formatted prompt for an LLM
         """
         prompt = f"""
 You are an expert HR professional and recruitment specialist. Your task is to assess how well a candidate's resume matches a given job profile description.
@@ -143,7 +150,70 @@ Please structure your response as a JSON object with the following format:
 Ensure your response is valid JSON and provides actionable insights for the hiring decision.
 """
         return prompt
-    
+
+    def query_llama33_70b(self, prompt: str) -> Dict[str, Any]:
+        """
+        Query LLaMA 3.3 70B Instruct model from Together.ai with the assessment prompt.
+
+        Args:
+            prompt (str): The formatted prompt for assessment
+
+        Returns:
+            Dict[str, Any]: Parsed response from the model
+
+        Raises:
+            Exception: If there's an error with the API call
+        """
+        try:
+            logger.info("Sending assessment request to LLaMA 3.3 70B via Together.ai")
+            
+            url = "https://api.together.xyz/v1/chat/completions"
+            headers = {
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json"
+            }
+            data = {
+                "model": "meta-llama/Llama-3.3-70B-Instruct-Turbo-Free",
+                "messages": [
+                    {
+                        "role": "system",
+                        "content": "You are an expert HR professional and recruitment specialist. Always respond with valid JSON format as requested."
+                    },
+                    {
+                        "role": "user",
+                        "content": prompt
+                    }
+                ],
+                #"temperature": 0.3,
+                #"max_tokens": 2000
+            }
+
+            response = requests.post(url, headers=headers, json=data)
+            response.raise_for_status()
+            content = response.json()["choices"][0]["message"]["content"].strip()
+
+            try:
+                assessment_result = json.loads(content)
+                logger.info("Successfully received and parsed Together.ai response")
+                return assessment_result
+            except json.JSONDecodeError as e:
+                logger.warning(f"LLaMA response was not valid JSON: {e}")
+                return {
+                    "overall_score": None,
+                    "summary": content,
+                    "detailed_analysis": {},
+                    "strengths": [],
+                    "gaps_and_concerns": [],
+                    "recommendations": {},
+                    "raw_response": content,
+                    "parsing_error": str(e)
+                }
+
+        except Exception as e:
+            logger.error(f"Error querying LLaMA 3.3 70B via Together.ai: {str(e)}")
+            raise
+
+
     def query_gpt4o(self, prompt: str) -> Dict[str, Any]:
         """
         Query GPT-4o with the assessment prompt.
@@ -223,7 +293,7 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
             'job_profile_path': job_profile_path,
             'resume_parsing_result': None,
             'job_profile_content': None,
-            'gpt4o_assessment': None,
+            'llm_assessment': None,
             'error': None
         }
         
@@ -252,10 +322,10 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
             logger.info("Step 4: Creating assessment prompt")
             prompt = self.create_assessment_prompt(job_profile, resume_text)
             
-            # Step 5: Query GPT-4o
-            logger.info("Step 5: Querying GPT-4o for assessment")
-            assessment = self.query_gpt4o(prompt)
-            result['gpt4o_assessment'] = assessment
+            # Step 5: Query LLM
+            logger.info("Step 5: Querying llama 3.3 70B for assessment")
+            assessment = self.query_llama33_70b(prompt)
+            result['llm_assessment'] = assessment
             
             result['success'] = True
             logger.info("Resume-job fit assessment completed successfully")
@@ -293,48 +363,48 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
                     f.write(f"Error: {assessment_result.get('error', 'Unknown error')}\n")
                     return True
                 
-                # GPT-4o Assessment Results
-                gpt_assessment = assessment_result.get('gpt4o_assessment', {})
+                # LLM Assessment Results
+                llm_assessment = assessment_result.get('llm_assessment', {})
                 
-                if 'overall_score' in gpt_assessment and gpt_assessment['overall_score'] is not None:
-                    f.write(f"OVERALL MATCH SCORE: {gpt_assessment['overall_score']}/10\n")
+                if 'overall_score' in llm_assessment and llm_assessment['overall_score'] is not None:
+                    f.write(f"OVERALL MATCH SCORE: {llm_assessment['overall_score']}/10\n")
                     f.write("=" * 30 + "\n\n")
                 
-                if 'summary' in gpt_assessment:
+                if 'summary' in llm_assessment:
                     f.write("EXECUTIVE SUMMARY:\n")
                     f.write("-" * 20 + "\n")
-                    f.write(f"{gpt_assessment['summary']}\n\n")
+                    f.write(f"{llm_assessment['summary']}\n\n")
                 
                 # Detailed Analysis
-                if 'detailed_analysis' in gpt_assessment:
+                if 'detailed_analysis' in llm_assessment:
                     f.write("DETAILED ANALYSIS:\n")
                     f.write("-" * 20 + "\n")
-                    analysis = gpt_assessment['detailed_analysis']
+                    analysis = llm_assessment['detailed_analysis']
                     
                     for key, value in analysis.items():
                         f.write(f"{key.replace('_', ' ').title()}: {value}\n\n")
                 
                 # Strengths
-                if 'strengths' in gpt_assessment and gpt_assessment['strengths']:
+                if 'strengths' in llm_assessment and llm_assessment['strengths']:
                     f.write("CANDIDATE STRENGTHS:\n")
                     f.write("-" * 20 + "\n")
-                    for i, strength in enumerate(gpt_assessment['strengths'], 1):
+                    for i, strength in enumerate(llm_assessment['strengths'], 1):
                         f.write(f"{i}. {strength}\n")
                     f.write("\n")
                 
                 # Gaps and Concerns
-                if 'gaps_and_concerns' in gpt_assessment and gpt_assessment['gaps_and_concerns']:
+                if 'gaps_and_concerns' in llm_assessment and llm_assessment['gaps_and_concerns']:
                     f.write("GAPS AND CONCERNS:\n")
                     f.write("-" * 20 + "\n")
-                    for i, concern in enumerate(gpt_assessment['gaps_and_concerns'], 1):
+                    for i, concern in enumerate(llm_assessment['gaps_and_concerns'], 1):
                         f.write(f"{i}. {concern}\n")
                     f.write("\n")
                 
                 # Recommendations
-                if 'recommendations' in gpt_assessment:
+                if 'recommendations' in llm_assessment:
                     f.write("RECOMMENDATIONS:\n")
                     f.write("-" * 20 + "\n")
-                    recommendations = gpt_assessment['recommendations']
+                    recommendations = llm_assessment['recommendations']
                     
                     if 'proceed_with_candidate' in recommendations:
                         f.write(f"Proceed with Candidate: {recommendations['proceed_with_candidate']}\n")
@@ -349,10 +419,10 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
                     f.write("\n")
                 
                 # Raw response if there was a parsing error
-                if 'raw_response' in gpt_assessment:
-                    f.write("RAW GPT-4o RESPONSE:\n")
+                if 'raw_response' in llm_assessment:
+                    f.write("RAW LLM RESPONSE:\n")
                     f.write("-" * 20 + "\n")
-                    f.write(f"{gpt_assessment['raw_response']}\n\n")
+                    f.write(f"{llm_assessment['raw_response']}\n\n")
                 
                 # Resume parsing details
                 if assessment_result.get('resume_parsing_result'):
@@ -414,8 +484,8 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
                 self.save_assessment_report(result, str(report_path))
                 
                 # Log result
-                if result['success'] and result.get('gpt4o_assessment', {}).get('overall_score') is not None:
-                    score = result['gpt4o_assessment']['overall_score']
+                if result['success'] and result.get('llm_assessment', {}).get('overall_score') is not None:
+                    score = result['llm_assessment']['overall_score']
                     logger.info(f"  ✅ Completed - Score: {score}/10")
                 else:
                     logger.warning(f"  ❌ Failed - {result.get('error', 'Unknown error')}")
@@ -451,14 +521,14 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
                 failed_results = []
                 
                 for result in results:
-                    if result['success'] and result.get('gpt4o_assessment', {}).get('overall_score') is not None:
+                    if result['success'] and result.get('llm_assessment', {}).get('overall_score') is not None:
                         scored_results.append(result)
                     else:
                         failed_results.append(result)
                 
                 # Sort by score (descending)
                 scored_results.sort(
-                    key=lambda x: x['gpt4o_assessment']['overall_score'], 
+                    key=lambda x: x['llm_assessment']['overall_score'], 
                     reverse=True
                 )
                 
@@ -466,7 +536,7 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
                 f.write("-" * 30 + "\n")
                 
                 for i, result in enumerate(scored_results, 1):
-                    score = result['gpt4o_assessment']['overall_score']
+                    score = result['llm_assessment']['overall_score']
                     resume_name = Path(result['resume_path']).name
                     f.write(f"{i:2d}. {resume_name:<25} Score: {score}/10\n")
                 
@@ -480,7 +550,7 @@ Ensure your response is valid JSON and provides actionable insights for the hiri
                 
                 # Statistics
                 if scored_results:
-                    scores = [r['gpt4o_assessment']['overall_score'] for r in scored_results]
+                    scores = [r['llm_assessment']['overall_score'] for r in scored_results]
                     f.write(f"\nSTATISTICS:\n")
                     f.write("-" * 15 + "\n")
                     f.write(f"Average Score: {sum(scores)/len(scores):.1f}\n")
@@ -524,7 +594,7 @@ def main():
             print("✅ Assessment completed successfully!")
             
             # Display key results
-            assessment = result['gpt4o_assessment']
+            assessment = result['llm_assessment']
             if assessment.get('overall_score') is not None:
                 print(f"📊 Overall Match Score: {assessment['overall_score']}/10")
             
@@ -541,7 +611,7 @@ def main():
     
     except Exception as e:
         print(f"❌ Error: {str(e)}")
-        print("Make sure you have set the OPENAI_API_KEY environment variable.")
+        print("Make sure you have set the OPENAI_API_KEY or TOGETHER_API_KEY environment variable.")
 
 
 if __name__ == "__main__":
