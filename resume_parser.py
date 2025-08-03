@@ -7,7 +7,7 @@ from pathlib import Path
 import pandas as pd
 import pdfplumber
 import fitz  # PyMuPDF
-from langchain.document_loaders import PyPDFLoader
+from langchain_community.document_loaders import PyPDFLoader
 from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.schema import Document
 
