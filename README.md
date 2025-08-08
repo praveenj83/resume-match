@@ -281,10 +281,6 @@ The parser includes comprehensive error handling for:
 - Assessment quality depends on the quality of job profile descriptions
 - May have rate limits based on LLM used
 
-## Contributing
-
-Feel free to submit issues and enhancement requests!
-
 ## License
 
 This project is licensed under the terms specified in the LICENSE file.
