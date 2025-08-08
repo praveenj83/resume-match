@@ -266,7 +266,7 @@ The parser includes comprehensive error handling for:
 - **python-magic**: File type detection
 
 ### AI Integration Dependencies (NEW!)
-- **openai**: GPT-4o API integration for job profile assessment
+- **openai**: GPT-4o and TogetherAI API integration for job profile assessment
 
 ## Limitations
 
