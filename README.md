@@ -31,10 +31,14 @@ A comprehensive PDF parsing tool for resumes using LangChain with advanced table
 pip install -r requirements.txt
 ```
 
-3. Set up OpenAI API key (required for job profile matching):
+3. Set up OpenAI API key or TogetherAI API key (required for job profile matching):
 
 ```bash
 export OPENAI_API_KEY='your-openai-api-key-here'
+```
+or
+```bash
+export TOGETHER_API_KEY='your-togetherai-api-key-here'
 ```
 
 ## Usage
@@ -94,12 +98,12 @@ else:
 #### Resume Parsing
 Process a single resume:
 ```bash
-python example_usage.py resume.pdf
+python example_usage.py --file resume.pdf
 ```
 
-Process multiple resumes:
+Process multiple resumes within a folder:
 ```bash
-python example_usage.py resume1.pdf resume2.pdf resume3.pdf
+python example_usage.py --file Samples/
 ```
 
 #### Job Profile Assessment
@@ -258,7 +262,7 @@ The parser includes comprehensive error handling for:
 - **pdfplumber**: Table extraction and detailed PDF analysis
 - **pymupdf (fitz)**: Metadata extraction and PDF manipulation
 - **pandas**: Table data processing
-- **pypdf2**: Additional PDF support
+- **pypdf**: Additional PDF support
 - **python-magic**: File type detection
 
 ### AI Integration Dependencies (NEW!)
@@ -273,10 +277,9 @@ The parser includes comprehensive error handling for:
 - Some password-protected PDFs may not be supported
 
 ### Job Profile Assessment Limitations
-- Requires OpenAI API key and internet connection
-- GPT-4o API calls incur costs based on OpenAI pricing
+- Requires OpenAI API key or TogetherAI API key along with Internet connection
 - Assessment quality depends on the quality of job profile descriptions
-- May have rate limits based on OpenAI API tier
+- May have rate limits based on LLM used
 
 ## Contributing
 
