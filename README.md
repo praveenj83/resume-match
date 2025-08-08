@@ -83,7 +83,7 @@ result = matcher.assess_resume_job_fit(
 )
 
 if result['success']:
-    assessment = result['gpt4o_assessment']
+    assessment = result['llm_assessment']
     print(f"Match Score: {assessment['overall_score']}/10")
     print(f"Summary: {assessment['summary']}")
     
@@ -165,7 +165,7 @@ results = matcher.batch_assess_resumes(
 # Process results
 for result in results:
     if result['success']:
-        score = result['gpt4o_assessment']['overall_score']
+        score = result['llm_assessment']['overall_score']
         resume_name = result['resume_path']
         print(f"{resume_name}: {score}/10")
 ```
@@ -216,7 +216,7 @@ The job matcher returns a comprehensive assessment structure:
     'job_profile_path': str,            # Path to the job profile file
     'resume_parsing_result': dict,      # Full resume parsing results
     'job_profile_content': str,         # Job profile text content
-    'gpt4o_assessment': {               # GPT-4o analysis results
+    'llm_assessment': {               # GPT-4o analysis results
         'overall_score': int,           # Match score (0-10)
         'summary': str,                 # Executive summary
         'detailed_analysis': {
